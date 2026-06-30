@@ -1,6 +1,6 @@
 {
-  "name": "@vibebrowser/mkt-alerts",
-  "version": "1.0.1",
+  "name": "@vibetechnologies/mkt-alerts",
+  "version": "1.0.2",
   "description": "CLI to manage price alerts on a self-hosted mkt daemon",
   "bin": {
     "mkt-alerts": "./dist/mkt-alerts.js"

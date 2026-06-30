@@ -6,17 +6,17 @@ Deploys [mkt](https://github.com/stxkxs/mkt) as a headless engine behind a **Clo
 
 ```bash
 # Subscribe — get your ntfy push URL (open in ntfy app on phone)
-npx -y @vibebrowser/mkt-alerts subscribe
+npx -y @vibetechnologies/mkt-alerts subscribe
 
 # Add a price alert
-npx -y @vibebrowser/mkt-alerts add \
+npx -y @vibetechnologies/mkt-alerts add \
   --symbol BTC-USD \
   --condition below --value 90000 \
   --reason "Support break — invalidates bull thesis" \
   --link "https://notion.so/my-analysis"
 
 # Add a compound alert (RSI + price)
-npx -y @vibebrowser/mkt-alerts add \
+npx -y @vibetechnologies/mkt-alerts add \
   --symbol AAPL \
   --condition rsi_below --value 30 \
   --condition below --value 200 \
@@ -24,10 +24,10 @@ npx -y @vibebrowser/mkt-alerts add \
   --desk stocks
 
 # List active alerts
-npx -y @vibebrowser/mkt-alerts list
+npx -y @vibetechnologies/mkt-alerts list
 
 # Remove an alert
-npx -y @vibebrowser/mkt-alerts remove --id <id>
+npx -y @vibetechnologies/mkt-alerts remove --id <id>
 ```
 
 ---
