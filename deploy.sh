@@ -65,15 +65,15 @@ CF_TUNNEL_TOKEN=$(bw get password "mkt-daemon/cf-tunnel-token" 2>/dev/null) \
 NTFY_TOPIC=$(bw get password "mkt-daemon/ntfy-topic" 2>/dev/null || true)
 if [[ -z "$NTFY_TOPIC" ]]; then
   NTFY_TOPIC="mkt-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:16])')"
-  bw get template item | python3 -c "
+  NTFY_TOPIC="$NTFY_TOPIC" bw get template item | NTFY_TOPIC="$NTFY_TOPIC" python3 -c "
 import sys,json,os
 t=json.load(sys.stdin)
 t['name']='mkt-daemon/ntfy-topic'
 t['collectionIds']=['0a1e6ed2-6366-41d6-b0be-b457016ecf0a']
-t['login']={'password':os.environ['NTFY_TOPIC']}
-t['notes']='ntfy.sh topic for mkt alert notifications. Subscribe: https://ntfy.sh/'+os.environ['NTFY_TOPIC']
+t['login']={'password':'$NTFY_TOPIC'}
+t['notes']='ntfy.sh topic for mkt alert notifications. Subscribe: https://ntfy.sh/$NTFY_TOPIC'
 print(json.dumps(t))
-" NTFY_TOPIC="$NTFY_TOPIC" | bw encode | bw create item > /dev/null
+" | bw encode | bw create item > /dev/null
   ok "ntfy topic generated and saved to Bitwarden: $NTFY_TOPIC"
 else
   ok "ntfy topic loaded from Bitwarden: $NTFY_TOPIC"
