@@ -1,22 +1,41 @@
-# mkt-gcp
+# mkt-alerts
 
-Deploys [mkt](https://github.com/stxkxs/mkt) as a headless alert daemon on a **free GCP e2-micro VM** behind a **Cloudflare Tunnel**.
+Price and indicator alert daemon — self-hosted on a **free GCP e2-micro VM**, delivered via **ntfy push** to your phone.
 
-Public API at `https://mkt.agentlabs.cc`. No open firewall ports.
+Deploys [mkt](https://github.com/stxkxs/mkt) as a headless engine behind a **Cloudflare Tunnel** (no open firewall ports).
+
+```bash
+# CLI — no deploy needed if server is already running
+npx @dzianisv/mkt-alerts subscribe   # get your ntfy push URL
+npx @dzianisv/mkt-alerts add --symbol BTC-USD --condition below --value 90000 --reason "Support break"
+npx @dzianisv/mkt-alerts list
+```
 
 ---
 
-## Quick start
+## Install as a Claude Code skill
+
+Agents can set alerts automatically after analysis:
+
+```bash
+npx skills add github.com/dzianisv/mkt-alerts/ -s mkt-alerts -y
+```
+
+Or manually copy `.claude/skills/mkt-alerts/SKILL.md` into `~/.claude/skills/mkt-alerts/`.
+
+---
+
+## Deploy your own instance
 
 **Prerequisites (local):**
-- `gcloud` CLI with a `bisonte` named config authenticated to `bisonte.amigable@gmail.com`
+- `gcloud` CLI with a named config authenticated to your GCP account
 - Bitwarden CLI (`bw`) unlocked — `source ~/.env.d/bitwarden.env`
 - `curl`, `python3`
 
 **Deploy:**
 ```bash
-git clone https://github.com/dzianisv/mkt-gcp
-cd mkt-gcp
+git clone https://github.com/dzianisv/mkt-alerts
+cd mkt-alerts
 bash deploy.sh
 ```
 

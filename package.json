@@ -1,0 +1,26 @@
+{
+  "name": "@dzianisv/mkt-alerts",
+  "version": "1.0.0",
+  "description": "CLI to manage price alerts on a self-hosted mkt daemon",
+  "bin": {
+    "mkt-alerts": "./mkt-alerts.ts"
+  },
+  "scripts": {
+    "build": "bun build mkt-alerts.ts --outfile dist/mkt-alerts.js --target node",
+    "prepublishOnly": "bun run build"
+  },
+  "files": [
+    "mkt-alerts.ts",
+    "dist/",
+    ".claude/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dzianisv/mkt-alerts.git"
+  },
+  "keywords": ["mkt", "alerts", "trading", "crypto", "stocks", "ntfy"],
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
