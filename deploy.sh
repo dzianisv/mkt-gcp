@@ -25,9 +25,10 @@ TUNNEL_NAME="mkt-daemon"
 TUNNEL_HOST="mkt.agentlabs.cc"
 MKT_LISTEN="127.0.0.1:9999"
 MKT_COMMIT="0207dda"
+MKT_LISTEN="127.0.0.1:8080"    # mkt daemon (internal)
+API_PORT="9000"                 # mkt-api (Bun, faces Cloudflare tunnel)
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SKILLS_DIR="$REPO_ROOT/.agents/skills/mkt/scripts"
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 log()  { echo "▶ $*"; }
@@ -76,6 +77,16 @@ print(json.dumps(t))
   ok "ntfy topic generated and saved to Bitwarden: $NTFY_TOPIC"
 else
   ok "ntfy topic loaded from Bitwarden: $NTFY_TOPIC"
+fi
+
+# API token — generate once, stored ONLY in ~/.config/mkt-watch/auth.json (user secret, not BW)
+AUTH_JSON="$HOME/.config/mkt-watch/auth.json"
+if [[ -f "$AUTH_JSON" ]]; then
+  API_TOKEN=$(python3 -c "import json; print(json.load(open('$AUTH_JSON'))['token'])")
+  ok "API token loaded from $AUTH_JSON"
+else
+  API_TOKEN=$(openssl rand -hex 32)
+  ok "API token generated"
 fi
 
 ok "secrets loaded from Bitwarden"
@@ -130,14 +141,18 @@ cat > "$TMP_ENV" <<EOF
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 TELEGRAM_CHAT_ID=@CryptoAiInvestor
 NTFY_TOPIC=${NTFY_TOPIC}
+API_TOKEN=${API_TOKEN}
+MKT_ORIGIN=http://127.0.0.1:8080
+PORT=9000
 EOF
 
 SCP "$TMP_ENV" "/tmp/mkt-daemon.env"
 rm -f "$TMP_ENV"
 
-# Upload skill scripts
-for f in check.ts store.ts indicators.ts mkt-alert.ts; do
-  SCP "$SKILLS_DIR/$f" "/tmp/$f"
+# Upload skill scripts + api server
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+for f in check.ts store.ts indicators.ts mkt-alert.ts api.ts; do
+  [[ -f "$SCRIPT_DIR/scripts/$f" ]] && SCP "$SCRIPT_DIR/scripts/$f" "/tmp/$f"
 done
 
 SSH "$(cat << REMOTE
@@ -170,10 +185,11 @@ fi
 export PATH=\$PATH:\$HOME/.bun/bin
 echo "  bun: \$(bun --version)"
 
-# ── skill scripts ─────────────────────────────────────────────────────────────
+# ── skill scripts + api server ────────────────────────────────────────────────
 MKT_SCRIPTS=\$HOME/.agents/skills/mkt/scripts
 mkdir -p "\$MKT_SCRIPTS"
 cp /tmp/check.ts /tmp/store.ts /tmp/indicators.ts /tmp/mkt-alert.ts "\$MKT_SCRIPTS/"
+[[ -f /tmp/api.ts ]] && cp /tmp/api.ts "\$MKT_SCRIPTS/"
 
 # ── env / secrets ─────────────────────────────────────────────────────────────
 sudo cp /tmp/mkt-daemon.env /etc/mkt-daemon.env
@@ -234,6 +250,32 @@ sudo systemctl restart mkt-daemon
 sleep 3
 sudo systemctl is-active mkt-daemon && echo "  ✓ mkt-daemon active"
 
+# ── systemd: mkt-api (Bun HTTP API on :9000) ─────────────────────────────────
+sudo tee /etc/systemd/system/mkt-api.service > /dev/null << SVC
+[Unit]
+Description=mkt HTTP API
+After=network-online.target mkt-daemon.service
+
+[Service]
+Type=simple
+User=\$U
+EnvironmentFile=/etc/mkt-daemon.env
+Environment=HOME=/home/\$U
+Environment=PATH=/usr/local/go/bin:/home/\$U/.local/bin:/home/\$U/.bun/bin:/usr/bin:/bin
+WorkingDirectory=/home/\$U/.agents/skills/mkt/scripts
+ExecStart=/home/\$U/.bun/bin/bun api.ts
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+SVC
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now mkt-api
+sleep 2
+sudo systemctl is-active mkt-api && echo "  ✓ mkt-api active"
+
 # ── cloudflared ───────────────────────────────────────────────────────────────
 if ! command -v cloudflared &>/dev/null; then
   curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
@@ -245,6 +287,17 @@ fi
 
 # Reinstall service with current token (idempotent)
 sudo cloudflared service install ${CF_TUNNEL_TOKEN} 2>/dev/null || true
+
+# Update ingress to point to mkt-api on :9000 (not mkt daemon :8080 directly)
+sudo mkdir -p /etc/cloudflared
+sudo tee /etc/cloudflared/config.yml > /dev/null << CFG
+tunnel: $(echo "${CF_TUNNEL_TOKEN}" | base64 -d 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['t'])" 2>/dev/null || true)
+ingress:
+  - hostname: ${TUNNEL_HOST}
+    service: http://127.0.0.1:${API_PORT}
+  - service: http_status:404
+CFG
+
 sudo systemctl restart cloudflared
 sleep 3
 sudo systemctl is-active cloudflared && echo "  ✓ cloudflared active"
@@ -254,29 +307,26 @@ REMOTE
 
 ok "remote setup complete"
 
-# ── Phase 4: Write local config (~/.config/mkt-gcp.json) ─────────────────────
-log "Phase 4: writing local CLI config"
+# ── Phase 4: Write local auth config ─────────────────────────────────────────
+log "Phase 4: writing ~/.config/mkt-watch/auth.json"
 
-mkdir -p "$HOME/.config"
-cat > "$HOME/.config/mkt-gcp.json" << JSON
+mkdir -p "$HOME/.config/mkt-watch"
+cat > "$HOME/.config/mkt-watch/auth.json" << JSON
 {
-  "vm": "$VM_NAME",
-  "zone": "$GCP_ZONE",
-  "project": "$GCP_PROJECT",
-  "gcloudConfig": "$GCP_CONFIG",
-  "ntfyTopic": "$NTFY_TOPIC",
-  "apiUrl": "https://$TUNNEL_HOST"
+  "apiUrl": "https://$TUNNEL_HOST",
+  "token": "$API_TOKEN"
 }
 JSON
-ok "config written to ~/.config/mkt-gcp.json"
+chmod 600 "$HOME/.config/mkt-watch/auth.json"
+ok "auth written to ~/.config/mkt-watch/auth.json (600)"
 
 # ── Phase 5: Verify ───────────────────────────────────────────────────────────
 log "Phase 5: verify"
 sleep 5
-if curl -sf "https://$TUNNEL_HOST/metrics" | grep -q "mkt_uptime"; then
-  ok "https://$TUNNEL_HOST/metrics — OK"
+if curl -sf -H "Authorization: Bearer $API_TOKEN" "https://$TUNNEL_HOST/subscribe" | grep -q "ntfy"; then
+  ok "https://$TUNNEL_HOST/subscribe — OK"
 else
-  echo "  ⚠ tunnel not yet reachable — check: sudo journalctl -u cloudflared -n 20"
+  echo "  ⚠ API not yet reachable — check: sudo journalctl -u mkt-api -n 20"
 fi
 
 echo ""
@@ -285,7 +335,6 @@ echo "  ✅  https://$TUNNEL_HOST"
 echo ""
 echo "  📲 Subscribe to alerts:"
 echo "     bun mkt-alerts.ts subscribe"
-echo "     https://ntfy.sh/$NTFY_TOPIC"
 echo ""
 echo "  Add alert:"
 echo "     bun mkt-alerts.ts add --symbol BTC-USD --condition below --value 90000 --reason 'support break'"
