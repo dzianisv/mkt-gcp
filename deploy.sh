@@ -60,6 +60,24 @@ TELEGRAM_BOT_TOKEN=$(bw get password "mkt-daemon/telegram-bot-token" 2>/dev/null
 CF_TUNNEL_TOKEN=$(bw get password "mkt-daemon/cf-tunnel-token" 2>/dev/null) \
   || die "mkt-daemon/cf-tunnel-token not found in Bitwarden"
 
+# ntfy topic — generate once, save to Bitwarden; reuse on redeploy
+NTFY_TOPIC=$(bw get password "mkt-daemon/ntfy-topic" 2>/dev/null || true)
+if [[ -z "$NTFY_TOPIC" ]]; then
+  NTFY_TOPIC="mkt-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:16])')"
+  bw get template item | python3 -c "
+import sys,json,os
+t=json.load(sys.stdin)
+t['name']='mkt-daemon/ntfy-topic'
+t['collectionIds']=['0a1e6ed2-6366-41d6-b0be-b457016ecf0a']
+t['login']={'password':os.environ['NTFY_TOPIC']}
+t['notes']='ntfy.sh topic for mkt alert notifications. Subscribe: https://ntfy.sh/'+os.environ['NTFY_TOPIC']
+print(json.dumps(t))
+" NTFY_TOPIC="$NTFY_TOPIC" | bw encode | bw create item > /dev/null
+  ok "ntfy topic generated and saved to Bitwarden: $NTFY_TOPIC"
+else
+  ok "ntfy topic loaded from Bitwarden: $NTFY_TOPIC"
+fi
+
 ok "secrets loaded from Bitwarden"
 
 # ── Phase 1: GCP VM ───────────────────────────────────────────────────────────
@@ -111,6 +129,7 @@ TMP_ENV=$(mktemp)
 cat > "$TMP_ENV" <<EOF
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 TELEGRAM_CHAT_ID=@CryptoAiInvestor
+NTFY_TOPIC=${NTFY_TOPIC}
 EOF
 
 SCP "$TMP_ENV" "/tmp/mkt-daemon.env"
@@ -247,7 +266,11 @@ fi
 echo ""
 echo "═══════════════════════════════════════════════════════"
 echo "  ✅  https://$TUNNEL_HOST"
+echo ""
+echo "  📲 Subscribe to alerts (ntfy app):"
+echo "     https://ntfy.sh/$NTFY_TOPIC"
+echo ""
 echo "  SSH: gcloud --configuration=bisonte compute ssh $VM_NAME --zone=$GCP_ZONE --project=$GCP_PROJECT"
-echo "  Logs: sudo journalctl -u mkt-daemon -f"
-echo "  Alerts: bun mkt-alert.ts list   (from ~/agents/.agents/skills/mkt/scripts)"
+echo "  Logs: sudo journalctl -u mkt-http -f"
+echo "  Add alert: bun mkt-alert.ts add --symbol BTC-USD --condition below --threshold 90000 --channel ntfy:$NTFY_TOPIC --reasoning '...'"
 echo "═══════════════════════════════════════════════════════"
