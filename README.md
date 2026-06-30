@@ -83,13 +83,29 @@ Supports stocks (`AAPL`, `CRM`) and crypto (`BTC-USD`, `ETH-USD`, `AAVE-USD`).
 
 ## Delivery channels
 
-### Telegram (default)
-Notifications go to `@CryptoAiInvestor` channel via the bot token in Bitwarden.
+### Telegram
+The bot (`@OpenClawBotSupport_Bot`, token in Bitwarden as `mkt-daemon/telegram-bot-token`) posts to the `@CryptoAiInvestor` channel using the [Bot API](https://core.telegram.org/bots/api#sendmessage).
+
+**How delivery works:**
+1. `check.ts` calls `api.telegram.org/bot{TOKEN}/sendMessage` with `chat_id=@CryptoAiInvestor`
+2. Telegram delivers the message to the channel
+
+**Requirement: the bot must be an admin of the channel.**
+Without admin rights the API returns `Unauthorized` and the alert is silently dropped.
+
+To add the bot as admin:
+1. Open `@CryptoAiInvestor` in Telegram
+2. Channel Info → Administrators → Add Admin → search `@OpenClawBotSupport_Bot`
+3. Grant "Post Messages" permission → Save
 
 ```bash
 --channel telegram-bot:@CryptoAiInvestor
-# or a private chat:
---channel telegram-bot:@yourusername
+```
+
+To post to a private chat instead (no admin needed — just start the bot):
+```bash
+--channel telegram-bot:@yourusername        # username
+--channel telegram-bot:-1001234567890       # numeric chat ID
 ```
 
 Message format:
@@ -99,7 +115,7 @@ Support break — exit signal
 📊 https://your-analysis-url
 ```
 
-**To use your own bot:** create one via [@BotFather](https://t.me/BotFather), add the token to Bitwarden as `mkt-daemon/telegram-bot-token`, redeploy.
+**To use a different bot:** create one via [@BotFather](https://t.me/BotFather), add the token to Bitwarden as `mkt-daemon/telegram-bot-token`, redeploy.
 
 ### Email
 Not yet wired. To add: set `RESEND_API_KEY` in Bitwarden as `mkt-daemon/resend-api-key`, then use:
