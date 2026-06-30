@@ -1,167 +1,140 @@
-# infra: mkt daemon
+# mkt-gcp
 
-## What
+Deploys [mkt](https://github.com/stxkxs/mkt) as a headless alert daemon on a **free GCP e2-micro VM** behind a **Cloudflare Tunnel**.
 
-`mkt daemon` — headless price + alert engine. Watches 160+ symbols, evaluates alert jobs every 5 min, sends Telegram notifications.
-
-Public API: `https://mkt.agentlabs.cc` (Cloudflare Tunnel — no open VM ports).
+Public API at `https://mkt.agentlabs.cc`. No open firewall ports.
 
 ---
 
-## Accounts
+## Quick start
 
-Both GCP and Cloudflare use **bisonte.amigable@gmail.com** (separate from primary vibeteaichnologies@gmail.com).
+**Prerequisites (local):**
+- `gcloud` CLI with a `bisonte` named config authenticated to `bisonte.amigable@gmail.com`
+- Bitwarden CLI (`bw`) unlocked — `source ~/.env.d/bitwarden.env`
+- `curl`, `python3`
 
-| Resource | Account | ID |
-|---|---|---|
-| GCP project | bisonte.amigable@gmail.com | `mkt-daemon-alerts` |
-| Cloudflare zone | bisonte.amigable@gmail.com | zone `5fbeec0aa0dca842ab3b62fafb948fe9`, account `c52033a95d560a9a183b016ceb1c107a` |
+**Deploy:**
+```bash
+git clone https://github.com/dzianisv/mkt-gcp
+cd mkt-gcp
+bash deploy.sh
+```
+
+That's it. The script:
+1. Creates the GCP VM (or starts it if stopped)
+2. Upserts the Cloudflare DNS CNAME
+3. Installs Go, Bun, mkt binary, systemd services on the VM
+4. Verifies `https://mkt.agentlabs.cc/metrics` responds
+
+Re-run any time to redeploy — idempotent.
 
 ---
 
-## VM
+## Setting alerts
 
-| Field | Value |
+SSH into the VM, then use `mkt-alert.ts`:
+
+```bash
+gcloud --configuration=bisonte compute ssh mkt-daemon \
+  --zone=us-central1-a --project=mkt-daemon-alerts
+
+# once on the VM:
+cd ~/.agents/skills/mkt/scripts
+```
+
+**Add an alert:**
+```bash
+bun mkt-alert.ts add \
+  --symbol BTC-USD \
+  --condition below \
+  --threshold 90000 \
+  --channel telegram-bot:@CryptoAiInvestor \
+  --reasoning "Support break — exit signal" \
+  --link "https://your-analysis-url"
+```
+
+**List active alerts:**
+```bash
+bun mkt-alert.ts list
+```
+
+**Remove an alert:**
+```bash
+bun mkt-alert.ts remove <id>
+```
+
+Alerts are checked every 15 minutes by a systemd timer. When a condition fires, you get a notification with the reasoning and analysis link you attached.
+
+---
+
+## Alert conditions
+
+| Condition | Meaning |
 |---|---|
-| Name | `mkt-daemon` |
-| Zone | `us-central1-a` |
-| Type | `e2-micro` (free tier) |
-| OS | Debian 12 |
-| External IP | `8.34.215.229` (ephemeral) |
+| `above` / `below` | price crosses threshold |
+| `pct_up` / `pct_down` | price moves X% from current |
+| `rsi_above` / `rsi_below` | RSI crosses value |
+| `sma_cross_above` / `sma_cross_below` | price crosses SMA |
+| `macd_cross` | MACD line crosses signal |
+
+Supports stocks (`AAPL`, `CRM`) and crypto (`BTC-USD`, `ETH-USD`, `AAVE-USD`).
 
 ---
 
-## SSH access
+## Delivery channels
 
-No separate SSH keys. gcloud manages keys automatically.
+### Telegram (default)
+Notifications go to `@CryptoAiInvestor` channel via the bot token in Bitwarden.
 
 ```bash
-gcloud compute ssh mkt-daemon \
-  --zone=us-central1-a \
-  --project=mkt-daemon-alerts \
-  --configuration=bisonte
+--channel telegram-bot:@CryptoAiInvestor
+# or a private chat:
+--channel telegram-bot:@yourusername
 ```
 
-`--configuration=bisonte` is required — isolates from the default gcloud account.
+Message format:
+```
+🔔 BTC-USD crossed below 90000
+Support break — exit signal
+📊 https://your-analysis-url
+```
 
----
+**To use your own bot:** create one via [@BotFather](https://t.me/BotFather), add the token to Bitwarden as `mkt-daemon/telegram-bot-token`, redeploy.
 
-## Cloudflare Tunnel
-
-- Tunnel name: `mkt-daemon`  
-- Tunnel ID: `160e0def-c30f-40d6-9528-49dc9f23b7c3`  
-- DNS: `mkt.agentlabs.cc CNAME → 160e0def-...cfargotunnel.com` (proxied)  
-- Ingress: all traffic to `mkt.agentlabs.cc` → `http://localhost:8080` on VM  
-- Token: in Bitwarden dev collection as `mkt-daemon-cf-tunnel-token`
-
----
-
-## Services on VM
-
-| Unit | Command | Role |
-|---|---|---|
-| `cloudflared.service` | `cloudflared tunnel run --token ...` | Tunnel to Cloudflare edge |
-| `mkt-http.service` | `mkt --listen :8080 daemon` | Price engine + HTTP API |
-| `mkt-check.timer` | `bun run check.ts` every 5 min | Evaluate alerts, send notifications |
-
-Env/secrets: `/home/engineer/.mkt.env` (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID).
-
+### Email
+Not yet wired. To add: set `RESEND_API_KEY` in Bitwarden as `mkt-daemon/resend-api-key`, then use:
 ```bash
-# Check all three
-gcloud compute ssh mkt-daemon --zone=us-central1-a --project=mkt-daemon-alerts --configuration=bisonte \
-  --command="sudo systemctl status cloudflared mkt-http mkt-check.timer --no-pager"
+--channel email:you@example.com
+```
+Requires a free [Resend](https://resend.com) account (3,000 emails/month free).
+
+### ntfy (no account needed)
+```bash
+--channel ntfy:your-topic-name
+# subscribe on phone: https://ntfy.sh/your-topic-name
 ```
 
 ---
 
-## API endpoints
-
-No auth — Cloudflare proxies all traffic (HTTPS termination at CF edge). VM port 8080 is NOT exposed externally (no GCP firewall rule).
+## API
 
 | Endpoint | Description |
 |---|---|
-| `GET /metrics` | Prometheus: uptime, symbols cached, alert count |
-| `GET /quotes` | All cached quotes |
-| `GET /quotes/{sym}` | Single symbol (e.g. `/quotes/BTC-USD`) |
-| `GET /alerts` | Current mkt-native alert rules |
+| `GET /metrics` | Uptime, symbol count, alert count |
+| `GET /quotes` | All cached prices |
+| `GET /quotes/BTC-USD` | Single symbol |
+| `GET /alerts` | Active mkt-native alert rules |
 
 ```bash
-curl https://mkt.agentlabs.cc/metrics
 curl https://mkt.agentlabs.cc/quotes/BTC-USD
 ```
 
 ---
 
-## Managing alerts (add / list / remove)
-
-Alert jobs live in `~/.config/mkt/agent-alerts.json` on the VM.  
-Use `mkt-alert.ts` from the agents repo:
+## Logs
 
 ```bash
-# SSH and run directly
-gcloud compute ssh mkt-daemon --zone=us-central1-a --project=mkt-daemon-alerts --configuration=bisonte \
-  --command="cd ~/agents/.agents/skills/mkt/scripts && bun mkt-alert.ts list"
-
-# Add alert
-gcloud compute ssh mkt-daemon ... \
-  --command="cd ~/agents/.agents/skills/mkt/scripts && \
-    bun mkt-alert.ts add \
-      --symbol BTC-USD \
-      --condition below \
-      --threshold 90000 \
-      --channel telegram-bot:@CryptoAiInvestor \
-      --reasoning 'Support break — exit signal'"
-
-# Remove alert by ID
-gcloud compute ssh mkt-daemon ... \
-  --command="cd ~/agents/.agents/skills/mkt/scripts && bun mkt-alert.ts remove <id>"
-
-# Sync local alert jobs → VM
-gcloud compute scp .cache/mkt/agent-alerts.json \
-  mkt-daemon:~/.config/mkt/agent-alerts.json \
-  --zone=us-central1-a --project=mkt-daemon-alerts --configuration=bisonte
-```
-
----
-
-## Security
-
-- **No open ports on VM** — GCP firewall has no rules for port 9999. Only cloudflared (outbound QUIC to CF edge).
-- **HTTPS only** — Cloudflare terminates TLS at edge; VM sees plain HTTP on loopback.
-- **No API auth** — read-only metrics/quotes. Add `--listen-token` flag to `ExecStart` if needed.
-- **Secrets in Bitwarden** (dev collection) — deploy.sh reads them at deploy time, writes to `/etc/mkt-daemon.env` (mode 600) on VM. Never in repo.
-
-| Bitwarden item | Content |
-|---|---|
-| `mkt-daemon/cf-tunnel-token` | Cloudflare Tunnel token (tunnel ID: `160e0def-...`) |
-| `mkt-daemon/telegram-bot-token` | Telegram bot token for alert notifications |
-
----
-
-## Files on VM
-
-```
-~/.mkt.env                              secrets (600)
-~/.local/bin/mkt                        binary (stxkxs/mkt@0207dda)
-~/.local/src/mkt/                       source
-~/agents/                               financial-advisor-agents (git pull to update)
-  .agents/skills/mkt/scripts/check.ts   alert checker
-~/.config/mkt/agent-alerts.json        active alert jobs
-/etc/cloudflared/config.yml            tunnel ingress rules
-/etc/systemd/system/mkt-http.service
-/etc/systemd/system/mkt-check.service
-/etc/systemd/system/mkt-check.timer
-```
-
----
-
-## Update / redeploy
-
-```bash
-# Pull latest agents code
-gcloud compute ssh mkt-daemon --zone=us-central1-a --project=mkt-daemon-alerts --configuration=bisonte \
-  --command="cd ~/agents && git pull && sudo systemctl restart mkt-http"
-
-# Full redeploy from scratch
-bash infra/mkt-daemon/deploy.sh
+gcloud --configuration=bisonte compute ssh mkt-daemon \
+  --zone=us-central1-a --project=mkt-daemon-alerts \
+  --command="sudo journalctl -u mkt-daemon -f"
 ```
