@@ -1,9 +1,9 @@
 {
-  "name": "@dzianisv/mkt-alerts",
-  "version": "1.0.0",
+  "name": "@vibebrowser/mkt-alerts",
+  "version": "1.0.1",
   "description": "CLI to manage price alerts on a self-hosted mkt daemon",
   "bin": {
-    "mkt-alerts": "./mkt-alerts.ts"
+    "mkt-alerts": "./dist/mkt-alerts.js"
   },
   "scripts": {
     "build": "bun build mkt-alerts.ts --outfile dist/mkt-alerts.js --target node",
@@ -18,7 +18,14 @@
     "type": "git",
     "url": "https://github.com/dzianisv/mkt-alerts.git"
   },
-  "keywords": ["mkt", "alerts", "trading", "crypto", "stocks", "ntfy"],
+  "keywords": [
+    "mkt",
+    "alerts",
+    "trading",
+    "crypto",
+    "stocks",
+    "ntfy"
+  ],
   "license": "MIT",
   "engines": {
     "bun": ">=1.0.0"

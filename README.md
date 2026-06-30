@@ -5,17 +5,36 @@ Price and indicator alert daemon — self-hosted on a **free GCP e2-micro VM**, 
 Deploys [mkt](https://github.com/stxkxs/mkt) as a headless engine behind a **Cloudflare Tunnel** (no open firewall ports).
 
 ```bash
-# CLI — no deploy needed if server is already running
-npx @dzianisv/mkt-alerts subscribe   # get your ntfy push URL
-npx @dzianisv/mkt-alerts add --symbol BTC-USD --condition below --value 90000 --reason "Support break"
-npx @dzianisv/mkt-alerts list
+# Subscribe — get your ntfy push URL (open in ntfy app on phone)
+npx -y @vibebrowser/mkt-alerts subscribe
+
+# Add a price alert
+npx -y @vibebrowser/mkt-alerts add \
+  --symbol BTC-USD \
+  --condition below --value 90000 \
+  --reason "Support break — invalidates bull thesis" \
+  --link "https://notion.so/my-analysis"
+
+# Add a compound alert (RSI + price)
+npx -y @vibebrowser/mkt-alerts add \
+  --symbol AAPL \
+  --condition rsi_below --value 30 \
+  --condition below --value 200 \
+  --reason "Oversold at key support" \
+  --desk stocks
+
+# List active alerts
+npx -y @vibebrowser/mkt-alerts list
+
+# Remove an alert
+npx -y @vibebrowser/mkt-alerts remove --id <id>
 ```
 
 ---
 
 ## Install as a Claude Code skill
 
-Agents can set alerts automatically after analysis:
+Agents (stocks-advisor, crypto-advisor, multi-lens-quorum) can set alerts automatically after analysis:
 
 ```bash
 npx skills add github.com/dzianisv/mkt-alerts/ -s mkt-alerts -y
