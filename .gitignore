@@ -2,3 +2,5 @@
 .env*
 *.key
 *.pem
+scripts/node_modules/
+scripts/bun.lock

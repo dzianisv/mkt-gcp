@@ -149,9 +149,9 @@ EOF
 SCP "$TMP_ENV" "/tmp/mkt-daemon.env"
 rm -f "$TMP_ENV"
 
-# Upload skill scripts + api server
+# Upload api server + package.json (yaml dep)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-for f in check.ts store.ts indicators.ts mkt-alert.ts api.ts; do
+for f in api.ts package.json; do
   [[ -f "$SCRIPT_DIR/scripts/$f" ]] && SCP "$SCRIPT_DIR/scripts/$f" "/tmp/$f"
 done
 
@@ -188,8 +188,11 @@ echo "  bun: \$(bun --version)"
 # ── skill scripts + api server ────────────────────────────────────────────────
 MKT_SCRIPTS=\$HOME/.agents/skills/mkt/scripts
 mkdir -p "\$MKT_SCRIPTS"
-cp /tmp/check.ts /tmp/store.ts /tmp/indicators.ts /tmp/mkt-alert.ts "\$MKT_SCRIPTS/"
 [[ -f /tmp/api.ts ]] && cp /tmp/api.ts "\$MKT_SCRIPTS/"
+if [[ -f /tmp/package.json ]]; then
+  cp /tmp/package.json "\$MKT_SCRIPTS/"
+  cd "\$MKT_SCRIPTS" && bun install --quiet
+fi
 
 # ── env / secrets ─────────────────────────────────────────────────────────────
 sudo cp /tmp/mkt-daemon.env /etc/mkt-daemon.env
@@ -209,43 +212,15 @@ EnvironmentFile=/etc/mkt-daemon.env
 Environment=HOME=/home/\$U
 Environment=PATH=/usr/local/go/bin:/home/\$U/.local/bin:/home/\$U/.bun/bin:/usr/bin:/bin
 ExecStart=/home/\$U/.local/bin/mkt daemon --listen ${MKT_LISTEN}
-Restart=on-failure
-RestartSec=15
+Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 SVC
 
-# ── systemd: mkt-check timer (every 15 min) ───────────────────────────────────
-sudo tee /etc/systemd/system/mkt-check.service > /dev/null << SVC
-[Unit]
-Description=mkt alert check
-
-[Service]
-Type=oneshot
-User=\$U
-EnvironmentFile=/etc/mkt-daemon.env
-Environment=HOME=/home/\$U
-Environment=PATH=/usr/local/go/bin:/home/\$U/.local/bin:/home/\$U/.bun/bin:/usr/bin:/bin
-WorkingDirectory=/home/\$U/.agents/skills/mkt/scripts
-ExecStart=/home/\$U/.bun/bin/bun check.ts
-SVC
-
-sudo tee /etc/systemd/system/mkt-check.timer > /dev/null << SVC
-[Unit]
-Description=mkt alert check every 15 min
-
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=15min
-Unit=mkt-check.service
-
-[Install]
-WantedBy=timers.target
-SVC
-
 sudo systemctl daemon-reload
-sudo systemctl enable --now mkt-daemon mkt-check.timer
+sudo systemctl enable --now mkt-daemon
 sudo systemctl restart mkt-daemon
 sleep 3
 sudo systemctl is-active mkt-daemon && echo "  ✓ mkt-daemon active"
