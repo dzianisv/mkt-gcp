@@ -32,38 +32,37 @@ Re-run any time to redeploy — idempotent.
 
 ## Setting alerts
 
-SSH into the VM, then use `mkt-alert.ts`:
+Use the included CLI — no SSH needed after `deploy.sh` runs.
 
+**Get your subscribe URL:**
 ```bash
-gcloud --configuration=bisonte compute ssh mkt-daemon \
-  --zone=us-central1-a --project=mkt-daemon-alerts
-
-# once on the VM:
-cd ~/.agents/skills/mkt/scripts
+bun mkt-alerts.ts subscribe
+# → https://ntfy.sh/mkt-a3f9c1e72d4b8e3f
+# Open ntfy app on your phone and subscribe to that URL
 ```
 
 **Add an alert:**
 ```bash
-bun mkt-alert.ts add \
+bun mkt-alerts.ts add \
   --symbol BTC-USD \
   --condition below \
-  --threshold 90000 \
-  --channel telegram-bot:@CryptoAiInvestor \
-  --reasoning "Support break — exit signal" \
+  --value 90000 \
+  --reason "Support break — exit signal" \
   --link "https://your-analysis-url"
+# channel defaults to your ntfy topic — no --channel needed
 ```
 
 **List active alerts:**
 ```bash
-bun mkt-alert.ts list
+bun mkt-alerts.ts list
 ```
 
 **Remove an alert:**
 ```bash
-bun mkt-alert.ts remove <id>
+bun mkt-alerts.ts remove --id <id>
 ```
 
-Alerts are checked every 15 minutes by a systemd timer. When a condition fires, you get a notification with the reasoning and analysis link you attached.
+Alerts are checked every 15 minutes. When a condition fires you get a push notification with the reasoning and analysis link.
 
 ---
 

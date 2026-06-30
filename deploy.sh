@@ -254,8 +254,24 @@ REMOTE
 
 ok "remote setup complete"
 
-# ── Phase 4: Verify ───────────────────────────────────────────────────────────
-log "Phase 4: verify"
+# ── Phase 4: Write local config (~/.config/mkt-gcp.json) ─────────────────────
+log "Phase 4: writing local CLI config"
+
+mkdir -p "$HOME/.config"
+cat > "$HOME/.config/mkt-gcp.json" << JSON
+{
+  "vm": "$VM_NAME",
+  "zone": "$GCP_ZONE",
+  "project": "$GCP_PROJECT",
+  "gcloudConfig": "$GCP_CONFIG",
+  "ntfyTopic": "$NTFY_TOPIC",
+  "apiUrl": "https://$TUNNEL_HOST"
+}
+JSON
+ok "config written to ~/.config/mkt-gcp.json"
+
+# ── Phase 5: Verify ───────────────────────────────────────────────────────────
+log "Phase 5: verify"
 sleep 5
 if curl -sf "https://$TUNNEL_HOST/metrics" | grep -q "mkt_uptime"; then
   ok "https://$TUNNEL_HOST/metrics — OK"
@@ -267,10 +283,12 @@ echo ""
 echo "═══════════════════════════════════════════════════════"
 echo "  ✅  https://$TUNNEL_HOST"
 echo ""
-echo "  📲 Subscribe to alerts (ntfy app):"
+echo "  📲 Subscribe to alerts:"
+echo "     bun mkt-alerts.ts subscribe"
 echo "     https://ntfy.sh/$NTFY_TOPIC"
 echo ""
+echo "  Add alert:"
+echo "     bun mkt-alerts.ts add --symbol BTC-USD --condition below --value 90000 --reason 'support break'"
+echo ""
 echo "  SSH: gcloud --configuration=bisonte compute ssh $VM_NAME --zone=$GCP_ZONE --project=$GCP_PROJECT"
-echo "  Logs: sudo journalctl -u mkt-http -f"
-echo "  Add alert: bun mkt-alert.ts add --symbol BTC-USD --condition below --threshold 90000 --channel ntfy:$NTFY_TOPIC --reasoning '...'"
 echo "═══════════════════════════════════════════════════════"
