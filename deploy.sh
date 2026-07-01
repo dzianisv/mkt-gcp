@@ -151,7 +151,7 @@ rm -f "$TMP_ENV"
 
 # Upload api server + package.json (yaml dep)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-for f in api.ts package.json; do
+for f in api.ts dividend_watch.ts package.json; do
   [[ -f "$SCRIPT_DIR/scripts/$f" ]] && SCP "$SCRIPT_DIR/scripts/$f" "/tmp/$f"
 done
 
@@ -189,6 +189,7 @@ echo "  bun: \$(bun --version)"
 MKT_SCRIPTS=\$HOME/.agents/skills/mkt/scripts
 mkdir -p "\$MKT_SCRIPTS"
 [[ -f /tmp/api.ts ]] && cp /tmp/api.ts "\$MKT_SCRIPTS/"
+[[ -f /tmp/dividend_watch.ts ]] && cp /tmp/dividend_watch.ts "\$MKT_SCRIPTS/"
 if [[ -f /tmp/package.json ]]; then
   cp /tmp/package.json "\$MKT_SCRIPTS/"
   cd "\$MKT_SCRIPTS" && bun install --quiet
@@ -250,6 +251,44 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now mkt-api
 sleep 2
 sudo systemctl is-active mkt-api && echo "  ✓ mkt-api active"
+
+# ── systemd: dividend-watch (daily payout monitor via timer) ─────────────────
+# The mkt Go daemon only polls price/indicator conditions; it has no engine for
+# arbitrary scheduled jobs. This timer IS that engine: it runs the headless
+# dividend watcher daily (no Chrome), pushing to the same ntfy + Telegram channels
+# from /etc/mkt-daemon.env. Persistent=true reruns a job missed while the box was off.
+sudo tee /etc/systemd/system/dividend-watch.service > /dev/null << SVC
+[Unit]
+Description=dividend payout watcher (daily)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=\$U
+EnvironmentFile=/etc/mkt-daemon.env
+Environment=HOME=/home/\$U
+Environment=PATH=/home/\$U/.bun/bin:/usr/bin:/bin
+Environment=TICKERS=SITC
+WorkingDirectory=/home/\$U/.agents/skills/mkt/scripts
+ExecStart=/home/\$U/.bun/bin/bun dividend_watch.ts
+SVC
+
+sudo tee /etc/systemd/system/dividend-watch.timer > /dev/null << TMR
+[Unit]
+Description=run dividend-watch daily after US market close
+
+[Timer]
+OnCalendar=*-*-* 21:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TMR
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now dividend-watch.timer
+echo "  ✓ dividend-watch.timer enabled ($(systemctl is-enabled dividend-watch.timer 2>/dev/null))"
 
 # ── cloudflared ───────────────────────────────────────────────────────────────
 if ! command -v cloudflared &>/dev/null; then
