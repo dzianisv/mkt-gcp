@@ -132,9 +132,30 @@ if (sub === "subscribe") {
   if (!conditions.length) die("--condition required");
   if (conditions.length !== values.length) die("each --condition needs a --value");
 
+  // Hard gate: price-level conditions require --data-source.
+  // Prevents fabricated support/resistance levels from being stored.
+  // Indicator conditions (rsi_above, rsi_below, macd_cross, etc.) are exempt.
+  const priceConditions = conditions.filter(c => c === "above" || c === "below");
+  if (priceConditions.length > 0) {
+    const dataSource = flag(args, "data-source");
+    if (!dataSource?.trim()) {
+      die(
+        `--data-source required for price conditions (above/below).\n` +
+        `Pull OHLCV data first, then cite the evidence for the level.\n` +
+        `Example: --data-source "14 weekly closes in \\$60k-\\$65k from 210w TradingView OHLCV"\n` +
+        `Example: --data-source "200wMA \\$62,640 from TradingView 210 weekly bars"\n` +
+        `No data source = no alert. Do not fabricate support levels.`
+      );
+    }
+  }
+
+  const finalReasoning = priceConditions.length > 0
+    ? `${reasoning} [data: ${flag(args, "data-source")}]`
+    : reasoning;
+
   const body: any = {
     symbol: symbol.toUpperCase(),
-    reasoning,
+    reasoning: finalReasoning,
     desk,
     conditions: conditions.map((c, i) => ({ condition: c, value: parseFloat(values[i]) })),
     ...(link     ? { analysisLink: link }              : {}),
